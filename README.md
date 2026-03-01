@@ -1,10 +1,6 @@
 # EUROBOT 2025
 
-<p align="center">
-  <img src="/ROCKHLYA.png" alt="drawing" width="700"/> 
-</p>
-
-Repository for the [EuroBot 2025 competition](https://www.eurobot.org/eurobot-contest/eurobot-2025/) by MEPhI students.
+Repository for the [ROS2 community competition](https://www.eurobot.org/eurobot-contest/eurobot-2025/) by MEPhI students, fork of EUROBOT repo.
 
 ## Table of Contents
 - [Prerequisites](#prerequisites)
