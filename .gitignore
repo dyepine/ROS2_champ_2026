@@ -6,6 +6,8 @@ data/**
 */log
 
 .env
+#jpeg files sampless_chessboard
+script/calibration/samples_chessboard/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
