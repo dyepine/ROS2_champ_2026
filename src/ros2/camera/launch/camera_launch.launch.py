@@ -52,11 +52,6 @@ def generate_launch_description():
         executable='image_raw_publisher',
     )
 
-    pose_distance_node = Node(
-        package='camera',
-        executable='pose_distance_node',
-    )
-    
     ld = LaunchDescription()
     ld.add_action(declare_config_path_cmd)
     ld.add_action(declare_rviz_cmd)
@@ -65,6 +60,5 @@ def generate_launch_description():
     ld.add_action(bve_pose_node)
     ld.add_action(rviz_node)
     ld.add_action(image_raw_pub_node)
-    ld.add_action(pose_distance_node)
 
     return ld

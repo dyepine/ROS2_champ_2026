@@ -27,7 +27,6 @@ setup(
         'console_scripts': [
             'camera_bve_pose = camera.position:main',
             'image_raw_publisher = camera.image_raw_publisher:main',
-            'pose_distance_node = camera.anti_collision:main'
         ],
     },
 )
