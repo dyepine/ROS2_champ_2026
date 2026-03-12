@@ -3,6 +3,7 @@ import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation as R
 import os
+from cv2 import aruco
 
 def read_config(config_path):
     with open(config_path, 'r') as file:
@@ -20,6 +21,14 @@ class Camera:
         self.arucoParams = cv2.aruco.DetectorParameters()
         self.arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_100)
         self.detector = cv2.aruco.ArucoDetector(self.arucoDict, self.arucoParams)
+	
+	self.charuco_board = cv2.aruco.CharucoBoard(
+    		(5, 7),  # (columns, rows) - 5x7 клеток
+    		0.25,    # размер клетки в метрах (250 мм)
+    		0.1875,  # размер маркера в метрах (можно 0.75 от клетки)
+    		self.arucoDict
+	)
+	self.charuco_detector = cv2.aruco.CharucoDetector(self.charuco_board)	
 
         team = os.getenv("TEAM")
 
@@ -74,7 +83,27 @@ class Camera:
         self.last_tmatrix = None
         self.last_center = None
         self.initialized = False
-
+	def get_pose_from_charuco(self, img):
+    """
+    Определяет позицию камеры относительно ChArUco доски
+    Возвращает: (успех, rvec, tvec)
+    """
+    		img_prepared = self.prepare_image(img)
+    
+    		# Детектируем ChArUco доску
+    		charuco_corners, charuco_ids, marker_corners, marker_ids = \
+        	self.charuco_detector.detectBoard(img_prepared)
+    
+    		if charuco_corners is not None and len(charuco_corners) > 3:
+        # Оцениваем позу камеры относительно доски
+        		retval, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
+            		charuco_corners, charuco_ids, self.charuco_board,
+            		self.camera_matrix, self.dist_coefs, None, None
+        	)
+        	if retval:
+            		return True, rvec, tvec
+    
+    	return False, None, None
     def prepare_image(self, img):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(6, 6))
@@ -89,8 +118,26 @@ class Camera:
         if ids is not None:
             ids = list(map(lambda x: x[0], ids))
         return ids, corners
+def t_matrix_building(self, ids, corners):
+    """
+    Определяет положение камеры относительно поля
+    Теперь использует ChArUco доску вместо отдельных маркеров
+    """
+    # Пробуем сначала ChArUco (более точно)
+    success, rvec, tvec = self.get_pose_from_charuco(self.last_img)
+    
+    if success:
+        tmatrix = cv2.Rodrigues(rvec)[0]
+        center = tvec.flatten()
+        self.last_tmatrix = tmatrix
+        self.last_center = center
+        self.initialized = True
+        return tmatrix, center
+    
+    # Fallback на старые маркеры если ChArUco не найден
+    return self._fallback_t_matrix_building(ids, corners)
 
-    def t_matrix_building(self, ids, corners):
+    def _fallback_t_matrix_building(self, ids, corners):
         if not ids or not any(marker_id in self.field_markers for marker_id in ids):
             return self.last_tmatrix, self.last_center
 
