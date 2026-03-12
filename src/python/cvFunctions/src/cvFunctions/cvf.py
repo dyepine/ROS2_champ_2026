@@ -29,6 +29,7 @@ class Camera:
     		self.arucoDict
 	)
 	self.charuco_detector = cv2.aruco.CharucoDetector(self.charuco_board)	
+	self.last_img = None
 
         team = os.getenv("TEAM")
 
@@ -84,21 +85,21 @@ class Camera:
         self.last_center = None
         self.initialized = False
 	def get_pose_from_charuco(self, img):
-    """
-    Определяет позицию камеры относительно ChArUco доски
-    Возвращает: (успех, rvec, tvec)
-    """
+    		"""
+    		Определяет позицию камеры относительно ChArUco доски
+    		Возвращает: (успех, rvec, tvec)
+    		"""
     		img_prepared = self.prepare_image(img)
     
     		# Детектируем ChArUco доску
     		charuco_corners, charuco_ids, marker_corners, marker_ids = \
-        	self.charuco_detector.detectBoard(img_prepared)
+        		self.charuco_detector.detectBoard(img_prepared)
     
     		if charuco_corners is not None and len(charuco_corners) > 3:
         # Оцениваем позу камеры относительно доски
         		retval, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
-            		charuco_corners, charuco_ids, self.charuco_board,
-            		self.camera_matrix, self.dist_coefs, None, None
+            			charuco_corners, charuco_ids, self.charuco_board,
+            			self.camera_matrix, self.dist_coefs, None, None
         	)
         	if retval:
             		return True, rvec, tvec
@@ -118,24 +119,28 @@ class Camera:
         if ids is not None:
             ids = list(map(lambda x: x[0], ids))
         return ids, corners
-def t_matrix_building(self, ids, corners):
-    """
-    Определяет положение камеры относительно поля
-    Теперь использует ChArUco доску вместо отдельных маркеров
-    """
-    # Пробуем сначала ChArUco (более точно)
-    success, rvec, tvec = self.get_pose_from_charuco(self.last_img)
+	
+	def t_matrix_building(self, ids, corners):
+    		"""
+    		Определяет положение камеры относительно поля
+    		Теперь использует ChArUco доску вместо отдельных маркеров
+    		"""
+		if img is not None:
+			self.last_img=img
+    		# Пробуем сначала ChArUco (более точно)
+    		if hasattr(self, 'last_img') and self.last_img is not None:
+			success, rvec, tvec = self.get_pose_from_charuco(self.last_img)
     
-    if success:
-        tmatrix = cv2.Rodrigues(rvec)[0]
-        center = tvec.flatten()
-        self.last_tmatrix = tmatrix
-        self.last_center = center
-        self.initialized = True
-        return tmatrix, center
+    			if success:
+        			tmatrix = cv2.Rodrigues(rvec)[0]
+        		center = tvec.flatten()
+        		self.last_tmatrix = tmatrix
+        		self.last_center = center
+        		self.initialized = True
+        		return tmatrix, center
     
-    # Fallback на старые маркеры если ChArUco не найден
-    return self._fallback_t_matrix_building(ids, corners)
+    	# Fallback на старые маркеры если ChArUco не найден
+    	return self._fallback_t_matrix_building(ids, corners)
 
     def _fallback_t_matrix_building(self, ids, corners):
         if not ids or not any(marker_id in self.field_markers for marker_id in ids):
@@ -280,15 +285,16 @@ def t_matrix_building(self, ids, corners):
 
 
     def robots_tracking(self, img):
-        ids, corners = self.detect_markers(img)
-        tmatrix, center = self.t_matrix_building(ids, corners)
+    	ids, corners = self.detect_markers(img)
+    	# Передаем img в t_matrix_building для ChArUco
+    	tmatrix, center = self.t_matrix_building(ids, corners, img)
 
-        our_tvec, our_quat, our_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=True)
-        enemy_tvec, enemy_quat, enemy_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=False)
+    	our_tvec, our_quat, our_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=True)
+    	enemy_tvec, enemy_quat, enemy_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=False)
 
-        if our_tvec is not None:
-            print(f"Our robot: x={our_tvec[0]:.3f}, y={our_tvec[1]:.3f}, z={our_tvec[2]:.3f}")
-        if enemy_tvec is not None:
-            print(f"Enemy robot: x={enemy_tvec[0]:.3f}, y={enemy_tvec[1]:.3f}, z={enemy_tvec[2]:.3f}")
+    	if our_tvec is not None:
+        	print(f"Our robot: x={our_tvec[0]:.3f}, y={our_tvec[1]:.3f}, z={our_tvec[2]:.3f}")
+    	if enemy_tvec is not None:
+        	print(f"Enemy robot: x={enemy_tvec[0]:.3f}, y={enemy_tvec[1]:.3f}, z={enemy_tvec[2]:.3f}")
 
-        return our_tvec, our_quat, enemy_tvec, enemy_quat, our_cov, enemy_cov
+    	return our_tvec, our_quat, enemy_tvec, enemy_quat, our_cov, enemy_cov
