@@ -36,11 +36,11 @@ class EnemyMapNode(Node):
 
         # Параметры карты
         self.map_resolution = 0.005  # 0.5 см/пиксель
-        self.map_width = 620         # 3.1 м
-        self.map_height = 420        # 2.1 м
-        self.origin_x = -1.55        # Центр в (0, 0)
-        self.origin_y = -1.05
-        self.radius_px = 40          # 0.3 м = 60 пикселей
+        self.map_width = 350         # 1.75 м
+        self.map_height = 250        # 1.25 м
+        self.origin_x = -0.875        # Центр в (0, 0)
+        self.origin_y = -0.625
+        self.radius_px = 50       # 0.25 м = 50 пикселей
 
         # Список игнорируемых препятствий
         self.ignored_obstacles = set()
@@ -50,25 +50,29 @@ class EnemyMapNode(Node):
 
         # Препятствия с координатами, уже учитывающими поворот на 180 градусов
         self.decks = {
-            "left_upper_material": [(604, 49), (584, 129)],
-            "left_lower_material": [(604, 234), (584, 314)],
-            "right_upper_material": [(14, 49), (34, 129)],
-            "right_lower_material": [(14, 234), (34, 314)],
-            "center_material_left": [(349, 189), (429, 209)],
-            "center_material_right": [(189, 189), (269, 209)],
-            "upper_material_left": [(414, 29), (494, 49)],
-            "upper_material_right": [(124, 29), (204, 49)],
-            "ramp_left": [(399, 369), (479, 409)],
-            "ramp_right": [(139, 369), (219, 409)],
-            "stage": [(219, 319), (399, 409)],
-            "stage_material_left": [(404, 344), (484, 364)],
-            "stage_material_right": [(134, 344), (214, 364)],
-            "blue_half" : [(320, 0), (640, 420)],
-            # "yellow_half" : [(320, 0), (o, 420)],
+            #"left_upper_material": [(604, 49), (584, 129)],
+            #"left_lower_material": [(604, 234), (584, 314)],
+            #"right_upper_material": [(14, 49), (34, 129)],
+            #"right_lower_material": [(14, 234), (34, 314)],
+            #"center_material_left": [(349, 189), (429, 209)],
+            #"center_material_right": [(189, 189), (269, 209)],
+            #"upper_material_left": [(414, 29), (494, 49)],
+            #"upper_material_right": [(124, 29), (204, 49)],
+            #"ramp_left": [(399, 369), (479, 409)],
+            #"ramp_right": [(139, 369), (219, 409)],
+            #"stage": [(219, 319), (399, 409)],
+            #"stage_material_left": [(404, 344), (484, 364)],
+            #"stage_material_right": [(134, 344), (214, 364)],
+            "blue_half" : [(0, 0), (350, 250)],
+             "yellow_half" : [(0, 0), (350, 250)],
         }
-
+	self.storage_zones = {
+		"storage_team1": [(0,200),(50,250)]
+		"storage_team2": [(300,0),(350,50)]
+	}
+	self.decks.update(self.storage_zones)
         # Базовая карта: занята (0)
-        self.base_map = np.ones((self.map_height, self.map_width), dtype=np.uint8)
+        self.base_map = np.zeros((self.map_height, self.map_width), dtype=np.uint8)
 
         # Рисуем препятствия на базовой карте
         for deck in self.decks.values():
@@ -107,7 +111,7 @@ class EnemyMapNode(Node):
         """Обработка позиции противника."""
         self.last_enemy_pose = msg.pose.pose
         self.update_map()
-
+	self.get_logger().info(f'Enemy at: ({msg.pose.pose.position.x:.2f}, {msg.pose.pose.position.y:.2f})')
     def update_map(self):
         """Обновление карты с учетом игнорируемых препятствий и позиции противника."""
         # Копируем базовую карту
