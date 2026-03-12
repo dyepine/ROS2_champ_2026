@@ -1,3 +1,9 @@
+charuco:
+  columns: 5
+  rows: 7
+  square_length: 0.25  # 250 мм
+  marker_length: 0.1875  # 75% от квадрата
+  dictionary: DICT_4X4_100
 camera_matrix:
   - [1550.4512220431934, 0.0, 1278.5891996327034]
   - [0.0, 1559.2326435388582, 638.7425447280928]
