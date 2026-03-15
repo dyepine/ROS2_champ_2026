@@ -2,7 +2,6 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-
 package_name = 'strategy'
 
 setup(
@@ -13,21 +12,21 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'launch'), glob("launch/*.launch.py")),
-        (os.path.join('share', package_name, 'config'), glob("config/*.yaml")),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Timur Manshin',
-    maintainer_email='TManshin@yandex.ru',
-    description='TODO: Package description',
+    maintainer='your_name',
+    maintainer_email='your_email@example.com',
+    description='Strategy node for robotics competition',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'strategy_node = strategy.strategy:main',
-            'reinit_node = strategy.reinit:main',
-            'reboot_node = strategy.reboot:main'
+            'reboot_publisher = strategy.reboot:main',
+            'reinit_publisher = strategy.reinit:main',
         ],
     },
 )
