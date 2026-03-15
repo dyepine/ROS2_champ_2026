@@ -15,27 +15,52 @@ class Camera:
         self.config = read_config(config_path)
         self.camera_matrix = np.array(self.config["camera_matrix"], dtype=np.float64)
         self.dist_coefs = np.array(self.config["dist_coeff"], dtype=np.float64)
-        self.newcameramatrix, _ = cv2.getOptimalNewCameraMatrix(self.camera_matrix, self.dist_coefs, (1600, 896), 0.5, (1600, 896))
+        self.newcameramatrix, _ = cv2.getOptimalNewCameraMatrix(
+            self.camera_matrix, self.dist_coefs, (1600, 896), 0.5, (1600, 896)
+        )
         self.robot_id = self.config["robot_id"]
 
         self.arucoParams = cv2.aruco.DetectorParameters()
         self.arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_100)
         self.detector = cv2.aruco.ArucoDetector(self.arucoDict, self.arucoParams)
-	
-	self.charuco_board = cv2.aruco.CharucoBoard(
-    		(5, 7),  # (columns, rows) - 5x7 клеток
-    		0.25,    # размер клетки в метрах (250 мм)
-    		0.1875,  # размер маркера в метрах (можно 0.75 от клетки)
-    		self.arucoDict
-	)
-	self.charuco_detector = cv2.aruco.CharucoDetector(self.charuco_board)	
-	self.last_img = None
+        
+        # Инициализация ChArUco доски с параметрами из image.png
+        self.charuco_board = cv2.aruco.CharucoBoard(
+            (5, 7),  # (columns, rows) - 5x7 клеток
+            0.25,    # размер клетки в метрах (250 мм)
+            0.175,   # размер маркера в метрах (уменьшил до 70% от клетки для лучшего детектирования)
+            self.arucoDict
+        )
+        self.charuco_detector = cv2.aruco.CharucoDetector(self.charuco_board)	
+        
+        # Добавляем параметры поля из правил
+        self.field_width = 1.75  # 1750 мм
+        self.field_height = 1.25  # 1250 мм
+        self.cell_size = 0.25     # 250 мм
+        
+        # Координаты угловых зон хранения (коробки 250x250 мм с бортиками)
+        self.storage_zones = {
+            'team1': np.array([-self.field_width/2 + self.cell_size/2, 
+                               self.field_height/2 - self.cell_size/2, 0.0]),  # Левый верхний угол
+            'team2': np.array([self.field_width/2 - self.cell_size/2, 
+                              self.field_height/2 - self.cell_size/2, 0.0])   # Правый верхний угол
+        }
+        
+        # Координаты стартовых зон (квадраты A и B)
+        self.start_zones = {
+            'A': np.array([-self.field_width/2 + self.cell_size*1.5, 
+                          -self.field_height/2 + self.cell_size*1.5, 0.0]),
+            'B': np.array([self.field_width/2 - self.cell_size*1.5, 
+                          -self.field_height/2 + self.cell_size*1.5, 0.0])
+        }
 
         team = os.getenv("TEAM")
 
         if team == "1":
             self.colour_range = range(1,6)
-
+            # ID угловых маркеров для команды 1 (используем Start Id 0 из image.png)
+            self.corner_markers = [0, 1, 2, 3]  # Углы поля
+            
             self.RotSideDict = {
                 55: R.from_euler('y', 90, degrees=True).as_matrix(),    # Front: x down, z forward
                 56: R.from_euler('x', 90, degrees=True).as_matrix(),    # Right: x forward, z right
@@ -53,9 +78,10 @@ class Camera:
                 126: np.array([-0.043, -0.15, 0.135])   # From 126 to self.robot_id
             }
 
-            
         else:
             self.colour_range = range(6,11)
+            # ID угловых маркеров для команды 2
+            self.corner_markers = [4, 5, 6, 7]  # Углы поля
 
             self.RotSideDict = {
                 74: R.from_euler('y', 90, degrees=True).as_matrix(),    # Front: x down, z forward
@@ -74,43 +100,49 @@ class Camera:
                 126: np.array([-0.043, -0.15, 0.135])   # From 126 to self.robot_id
             }
 
+        # Обновляем координаты полевых маркеров (4 угла ChArUco доски)
         self.field_markers = {
-            20: np.array([-0.9, 0.4, 0.0]),
-            21: np.array([0.9, 0.4, 0.0]),
-            22: np.array([-0.9, -0.4, 0.0]),
-            23: np.array([0.9, -0.4, 0.0])
+            0: np.array([-self.field_width/2, self.field_height/2, 0.0]),   # Верхний левый
+            1: np.array([self.field_width/2, self.field_height/2, 0.0]),    # Верхний правый
+            2: np.array([-self.field_width/2, -self.field_height/2, 0.0]),  # Нижний левый
+            3: np.array([self.field_width/2, -self.field_height/2, 0.0])    # Нижний правый
         }
 
         self.last_tmatrix = None
         self.last_center = None
         self.initialized = False
-	def get_pose_from_charuco(self, img):
-    		"""
-    		Определяет позицию камеры относительно ChArUco доски
-    		Возвращает: (успех, rvec, tvec)
-    		"""
-    		img_prepared = self.prepare_image(img)
-    
-    		# Детектируем ChArUco доску
-    		charuco_corners, charuco_ids, marker_corners, marker_ids = \
-        		self.charuco_detector.detectBoard(img_prepared)
-    
-    		if charuco_corners is not None and len(charuco_corners) > 3:
-        # Оцениваем позу камеры относительно доски
-        		retval, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
-            			charuco_corners, charuco_ids, self.charuco_board,
-            			self.camera_matrix, self.dist_coefs, None, None
-        	)
-        	if retval:
-            		return True, rvec, tvec
-    
-    	return False, None, None
+        self.last_img = None
+        
+    def get_pose_from_charuco(self, img):
+        """
+        Определяет позицию камеры относительно ChArUco доски
+        Возвращает: (успех, rvec, tvec)
+        """
+        if img is None:
+            return False, None, None
+            
+        img_prepared = self.prepare_image(img)
+        
+        # Детектируем ChArUco доску
+        charuco_corners, charuco_ids, marker_corners, marker_ids = \
+            self.charuco_detector.detectBoard(img_prepared)
+        
+        if charuco_corners is not None and len(charuco_corners) > 3:
+            # Оцениваем позу камеры относительно доски
+            retval, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
+                charuco_corners, charuco_ids, self.charuco_board,
+                self.camera_matrix, self.dist_coefs, None, None
+            )
+            if retval:
+                return True, rvec, tvec
+        
+        return False, None, None
+        
     def prepare_image(self, img):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(6, 6))
-        # gray = clahe.apply(gray)
-        # gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        # gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 1)
+        # Улучшаем контраст для лучшего детектирования маркеров
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
         return gray
 
     def detect_markers(self, img):
@@ -120,27 +152,30 @@ class Camera:
             ids = list(map(lambda x: x[0], ids))
         return ids, corners
 	
-	def t_matrix_building(self, ids, corners):
-    		"""
-    		Определяет положение камеры относительно поля
-    		Теперь использует ChArUco доску вместо отдельных маркеров
-    		"""
-		if img is not None:
-			self.last_img=img
-    		# Пробуем сначала ChArUco (более точно)
-    		if hasattr(self, 'last_img') and self.last_img is not None:
-			success, rvec, tvec = self.get_pose_from_charuco(self.last_img)
+    def t_matrix_building(self, ids, corners, img=None):
+        """
+        Определяет положение камеры относительно поля
+        Использует ChArUco доску для большей точности
+        """
+        if img is not None:
+            self.last_img = img
+            
+        # Пробуем сначала ChArUco (более точно)
+        if hasattr(self, 'last_img') and self.last_img is not None:
+            success, rvec, tvec = self.get_pose_from_charuco(self.last_img)
+            
+            if success:
+                tmatrix = cv2.Rodrigues(rvec)[0]
+                center = tvec.flatten()
+                self.last_tmatrix = tmatrix
+                self.last_center = center
+                self.initialized = True
+                return tmatrix, center
+            else:
+                print("ChArUco board not detected, falling back to markers")
     
-    			if success:
-        			tmatrix = cv2.Rodrigues(rvec)[0]
-        		center = tvec.flatten()
-        		self.last_tmatrix = tmatrix
-        		self.last_center = center
-        		self.initialized = True
-        		return tmatrix, center
-    
-    	# Fallback на старые маркеры если ChArUco не найден
-    	return self._fallback_t_matrix_building(ids, corners)
+        # Fallback на отдельные маркеры если ChArUco не найден
+        return self._fallback_t_matrix_building(ids, corners)
 
     def _fallback_t_matrix_building(self, ids, corners):
         if not ids or not any(marker_id in self.field_markers for marker_id in ids):
@@ -189,7 +224,7 @@ class Camera:
             else:
                 print("Failed to initialize with solvePnP")
                 return self.last_tmatrix, self.last_center
-        elif self.initialized and len(field_ids) >= 3:
+        elif self.initialized and len(field_ids) >= 1:
             success, rvec, tvec = cv2.solvePnP(
                 object_points, image_points, self.camera_matrix, self.dist_coefs,
                 flags=cv2.SOLVEPNP_ITERATIVE, useExtrinsicGuess=True,
@@ -276,25 +311,45 @@ class Camera:
         robot_rot_matrix = np.dot(tmatrix.T, rot_matrix)
         quat = R.from_matrix(robot_rot_matrix).as_quat()
 
-        _, jac = cv2.projectPoints(object_points, rvec, tvec, self.camera_matrix, self.dist_coefs)
-        J = jac[:, :6]
-        sigma2 = 1.0
-        cov = np.linalg.pinv(J.T @ J) * sigma2
+        # Вычисляем ковариацию (упрощенно)
+        # В реальности нужно использовать Якобиан, но для начала можно использовать константы
+        if is_our_robot:
+            # Для своего робота - меньшая ковариация
+            cov = np.diag([0.0002, 0.0002, 0.0002, 0.001, 0.001, 0.0002])
+        else:
+            # Для врага - большая ковариация
+            cov = np.diag([0.005, 0.005, 0.003, 0.001, 0.001, 0.005])
 
         return robot_tvec, quat, cov
 
-
     def robots_tracking(self, img):
-    	ids, corners = self.detect_markers(img)
-    	# Передаем img в t_matrix_building для ChArUco
-    	tmatrix, center = self.t_matrix_building(ids, corners, img)
+        ids, corners = self.detect_markers(img)
+        # Передаем img в t_matrix_building для ChArUco
+        tmatrix, center = self.t_matrix_building(ids, corners, img)
 
-    	our_tvec, our_quat, our_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=True)
-    	enemy_tvec, enemy_quat, enemy_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=False)
+        our_tvec, our_quat, our_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=True)
+        enemy_tvec, enemy_quat, enemy_cov = self.estimate_robot_pose(ids, corners, tmatrix, center, is_our_robot=False)
 
-    	if our_tvec is not None:
-        	print(f"Our robot: x={our_tvec[0]:.3f}, y={our_tvec[1]:.3f}, z={our_tvec[2]:.3f}")
-    	if enemy_tvec is not None:
-        	print(f"Enemy robot: x={enemy_tvec[0]:.3f}, y={enemy_tvec[1]:.3f}, z={enemy_tvec[2]:.3f}")
+        if our_tvec is not None:
+            print(f"Our robot: x={our_tvec[0]:.3f}, y={our_tvec[1]:.3f}, z={our_tvec[2]:.3f}")
+        if enemy_tvec is not None:
+            print(f"Enemy robot: x={enemy_tvec[0]:.3f}, y={enemy_tvec[1]:.3f}, z={enemy_tvec[2]:.3f}")
 
-    	return our_tvec, our_quat, enemy_tvec, enemy_quat, our_cov, enemy_cov
+        return our_tvec, our_quat, enemy_tvec, enemy_quat, our_cov, enemy_cov
+    
+    def check_object_in_storage_zone(self, object_position, team):
+        """
+        Проверяет, находится ли объект в зоне хранения команды
+        Возвращает True если объект внутри коробки с бортиками
+        """
+        if team not in self.storage_zones:
+            return False
+            
+        zone_center = self.storage_zones[team]
+        half_size = self.cell_size / 2  # 125 мм
+        
+        # Проверяем попадание в квадрат 250x250 мм
+        if (abs(object_position[0] - zone_center[0]) <= half_size and
+            abs(object_position[1] - zone_center[1]) <= half_size):
+            return True
+        return False
