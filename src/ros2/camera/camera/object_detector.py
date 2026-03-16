@@ -1,9 +1,3 @@
-Создадим новый пакет для детекции объектов
-Нужен узел, который будет определять игровые объекты (кубики, цилиндры) и их стоимость:
-
-object_detector.py:
-
-python
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -49,6 +43,23 @@ class ObjectDetector(Node):
         self.load_object_values()
         
         self.get_logger().info(f"Object detector initialized for team {self.team}")
+        self.object_value_pub = self.create_publisher(
+                Int16, '/object_value', 10
+            )
+    def load_object_values(self):
+        """Загружает стоимость объектов из конфигурационного файла"""
+        try:
+            package_path = get_package_share_directory('strategy')
+            config_path = os.path.join(package_path, 'config', f'object_values_team{self.team}.yaml')
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                self.object_values = config.get('object_values', {})
+                
+            self.get_logger().info(f"Loaded object values: {self.object_values}")
+        except Exception as e:
+            self.get_logger().error(f"Failed to load object values: {e}")
+            self.object_values = {}
     
     def load_object_values(self):
         """Загружает стоимость объектов из конфигурационного файла"""
@@ -100,7 +111,17 @@ class ObjectDetector(Node):
                 
                 # Логируем детекцию
                 self.get_logger().info(f"Detected object with marker ID: {marker_id}")
-
+                if ids is not None:
+                        for i, marker_id in enumerate(ids.flatten()):
+                            # Получаем стоимость объекта
+                            value = self.object_values.get(marker_id, 0)
+                            
+                            # Публикуем стоимость
+                            value_msg = Int16()
+                            value_msg.data = value
+                            self.object_value_pub.publish(value_msg)
+                            
+                            self.get_logger().info(f"Detected object ID: {marker_id}, value: {value}")
 def main(args=None):
     rclpy.init(args=args)
     node = ObjectDetector()
