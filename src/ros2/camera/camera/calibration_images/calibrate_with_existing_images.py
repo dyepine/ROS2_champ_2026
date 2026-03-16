@@ -4,114 +4,126 @@ import numpy as np
 import glob
 import yaml
 import os
-from cv2 import aruro
 
-def calibrate_with_existing_images():
+def calibrate_with_markers():
     """
-    Калибровка камеры с использованием существующих фотографий ChArUco доски
+    Калибровка камеры по отдельным ArUco маркерам
     """
     
-    # Пути
     script_dir = os.path.dirname(os.path.abspath(__file__))
     package_dir = os.path.dirname(script_dir)
     images_path = os.path.join(package_dir, 'calibration_images')
     output_config_path = os.path.join(package_dir, 'config', 'camera_calibration_config.yaml')
     
-    # Параметры ChArUco доски из image.png
-    columns = 5  # Количество столбцов
-    rows = 7     # Количество строк
-    square_length = 0.25  # 250 мм в метрах
-    marker_length = 0.175  # 175 мм (70% от клетки)
-    
-    print("=== Калибровка камеры по существующим фотографиям ===")
-    print(f"Директория с изображениями: {images_path}")
-    print(f"Параметры доски: {columns}x{rows} клеток, {square_length*1000} мм")
+    print("=== КАЛИБРОВКА ПО ОТДЕЛЬНЫМ МАРКЕРАМ ===")
+    print(f"Директория: {images_path}")
     print("=" * 50)
     
-    # Проверяем наличие изображений
-    if not os.path.exists(images_path):
-        print(f"Ошибка: директория {images_path} не найдена")
-        return False
-    
+    # Загружаем изображения
     image_files = glob.glob(os.path.join(images_path, '*.jpg')) + \
                   glob.glob(os.path.join(images_path, '*.png'))
     
-    if len(image_files) == 0:
-        print(f"Ошибка: в директории {images_path} нет изображений")
-        return False
-    
     print(f"Найдено {len(image_files)} изображений")
     
-    # Словарь маркеров
-    aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
+    # Используем словарь DICT_5X5_50
+    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_50)
+    detector = cv2.aruco.ArucoDetector(aruco_dict)
     
-    # Создаем доску Charuco
-    charuco_board = aruco.CharucoBoard(
-        (columns, rows),
-        square_length,
-        marker_length,
-        aruco_dict
-    )
+    # Реальный размер маркера в метрах
+    marker_size = 0.046  # 46 мм
     
-    # Параметры детектора
-    charuco_detector = aruco.CharucoDetector(charuco_board)
+    # Собираем данные для калибровки
+    all_object_points = []  # список массивов 3D точек
+    all_image_points = []   # список массивов 2D точек
     
-    # Собираем точки для калибровки
-    all_corners = []
-    all_ids = []
     image_size = None
-    
-    successful_images = 0
+    total_markers = 0
     
     for i, image_path in enumerate(image_files):
         print(f"\nОбработка {i+1}/{len(image_files)}: {os.path.basename(image_path)}")
         
-        # Читаем изображение
         img = cv2.imread(image_path)
         if img is None:
             print(f"  Не удалось загрузить")
             continue
-            
+        
         if image_size is None:
             image_size = (img.shape[1], img.shape[0])
-            print(f"  Размер изображения: {image_size[0]}x{image_size[1]}")
+            print(f"  Размер: {image_size[0]}x{image_size[1]}")
         
-        # Конвертируем в grayscale
+        # Улучшаем изображение
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
         
-        # Детектируем доску
-        charuco_corners, charuco_ids, marker_corners, marker_ids = \
-            charuco_detector.detectBoard(gray)
+        # Детектируем маркеры
+        corners, ids, _ = detector.detectMarkers(enhanced)
         
-        if charuco_corners is not None and len(charuco_corners) > 4:
-            all_corners.append(charuco_corners)
-            all_ids.append(charuco_ids)
-            successful_images += 1
-            print(f"  ✓ Найдено {len(charuco_corners)} углов ChArUco")
+        if ids is not None and len(ids) > 0:
+            print(f"  Найдено маркеров: {len(ids)}")
+            
+            # Для этого изображения создаем списки точек
+            obj_points = []
+            img_points = []
+            
+            for j, (corner, id_) in enumerate(zip(corners, ids)):
+                # 3D точки углов маркера (в системе координат маркера)
+                obj_corner = np.array([
+                    [-marker_size/2,  marker_size/2, 0],
+                    [ marker_size/2,  marker_size/2, 0],
+                    [ marker_size/2, -marker_size/2, 0],
+                    [-marker_size/2, -marker_size/2, 0]
+                ], dtype=np.float32)
+                
+                # 2D точки углов маркера (на изображении)
+                img_corner = corner[0].astype(np.float32)
+                
+                obj_points.append(obj_corner)
+                img_points.append(img_corner)
+            
+            # Добавляем данные этого изображения в общие списки
+            all_object_points.append(np.vstack(obj_points))
+            all_image_points.append(np.vstack(img_points))
+            total_markers += len(ids)
+            
+            # Визуализация
+            img_copy = img.copy()
+            cv2.aruco.drawDetectedMarkers(img_copy, corners, ids)
+            cv2.imshow('Detected Markers', cv2.resize(img_copy, (960, 540)))
+            cv2.waitKey(100)
         else:
-            print(f"  ✗ Не удалось обнаружить достаточно углов")
+            print(f"  Маркеры не найдены")
     
-    print(f"\nУспешно обработано {successful_images} из {len(image_files)} изображений")
+    cv2.destroyAllWindows()
     
-    if successful_images < 5:
-        print(f"Ошибка: недостаточно изображений с доской (нужно минимум 5)")
+    if len(all_object_points) < 3:
+        print(f"\nОшибка: недостаточно изображений с маркерами (нужно минимум 3)")
         return False
     
-    # Калибровка камеры
-    print("\nВыполняется калибровка...")
+    print(f"\nУспешно обработано изображений: {len(all_object_points)}")
+    print(f"Всего маркеров: {total_markers}")
     
-    camera_matrix = np.eye(3)
+    # Начальное приближение для матрицы камеры
+    focal_length = max(image_size)  # приблизительно
+    camera_matrix = np.array([
+        [focal_length, 0, image_size[0]/2],
+        [0, focal_length, image_size[1]/2],
+        [0, 0, 1]
+    ], dtype=np.float32)
+    
     dist_coeffs = np.zeros(5)
     
+    # Калибровка
+    print("\nКалибровка камеры...")
+    
     retval, camera_matrix, dist_coeffs, rvecs, tvecs = \
-        aruco.calibrateCameraCharuco(
-            charuco_corners=all_corners,
-            charuco_ids=all_ids,
-            board=charuco_board,
-            imageSize=image_size,
-            cameraMatrix=camera_matrix,
-            distCoeffs=dist_coeffs,
-            flags=cv2.CALIB_RATIONAL_MODEL
+        cv2.calibrateCamera(
+            all_object_points,
+            all_image_points,
+            image_size,
+            camera_matrix,
+            dist_coeffs,
+            flags=cv2.CALIB_USE_INTRINSIC_GUESS
         )
     
     if not retval:
@@ -120,16 +132,23 @@ def calibrate_with_existing_images():
     
     # Вычисляем ошибку репроекции
     total_error = 0
-    for i, corners in enumerate(all_corners):
-        img_points, _ = cv2.projectPoints(
-            charuco_board.getChessboardCorners()[all_ids[i].flatten()],
+    total_points = 0
+    
+    for i in range(len(all_object_points)):
+        img_points2, _ = cv2.projectPoints(
+            all_object_points[i],
             rvecs[i], tvecs[i],
             camera_matrix, dist_coeffs
         )
-        error = cv2.norm(corners, img_points, cv2.NORM_L2) / len(img_points)
+        
+        # Исправляем: img_points2 имеет форму (N, 1, 2), нужно привести к (N, 2)
+        img_points2 = img_points2.reshape(-1, 2)
+        
+        error = cv2.norm(all_image_points[i], img_points2, cv2.NORM_L2) / len(img_points2)
         total_error += error
+        total_points += len(img_points2)
     
-    mean_error = total_error / len(all_corners)
+    mean_error = total_error / len(all_object_points)
     
     # Сохраняем результаты
     calibration_data = {
@@ -139,18 +158,13 @@ def calibrate_with_existing_images():
         'image_height': image_size[1],
         'reprojection_error': float(mean_error),
         'calibration_date': str(np.datetime64('now')),
-        'charuco_params': {
-            'columns': columns,
-            'rows': rows,
-            'square_length': square_length,
-            'marker_length': marker_length
-        }
+        'method': 'individual_markers',
+        'marker_size': marker_size,
+        'dictionary': 'DICT_5X5_50'
     }
     
-    # Создаем директорию config если её нет
     os.makedirs(os.path.dirname(output_config_path), exist_ok=True)
     
-    # Сохраняем в YAML файл
     with open(output_config_path, 'w') as f:
         yaml.dump(calibration_data, f, default_flow_style=False)
     
@@ -162,38 +176,37 @@ def calibrate_with_existing_images():
     print(f"  cx = {camera_matrix[0,2]:.2f}")
     print(f"  cy = {camera_matrix[1,2]:.2f}")
     print(f"\nКоэффициенты дисторсии:")
-    print(f"  k1 = {dist_coeffs[0]:.4f}")
-    print(f"  k2 = {dist_coeffs[1]:.4f}")
-    print(f"  p1 = {dist_coeffs[2]:.4f}")
-    print(f"  p2 = {dist_coeffs[3]:.4f}")
-    print(f"  k3 = {dist_coeffs[4]:.4f}")
+    print(f"  k1 = {dist_coeffs[0]:.6f}")
+    print(f"  k2 = {dist_coeffs[1]:.6f}")
+    print(f"  p1 = {dist_coeffs[2]:.6f}")
+    print(f"  p2 = {dist_coeffs[3]:.6f}")
+    print(f"  k3 = {dist_coeffs[4]:.6f}")
     print(f"\nРезультаты сохранены в: {output_config_path}")
     
-    # Покажем одно из обработанных изображений
-    if successful_images > 0:
-        # Берем первое успешное изображение
+    # Проверка на тестовом изображении
+    if len(image_files) > 0:
         test_img = cv2.imread(image_files[0])
         gray = cv2.cvtColor(test_img, cv2.COLOR_BGR2GRAY)
+        enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(gray)
         
-        # Детектируем и рисуем оси
-        charuco_corners, charuco_ids, marker_corners, marker_ids = \
-            charuco_detector.detectBoard(gray)
+        corners, ids, _ = detector.detectMarkers(enhanced)
         
-        if charuco_corners is not None:
-            # Найдем соответствующую трансформацию
-            for i, corners in enumerate(all_corners):
-                if len(corners) == len(charuco_corners):
-                    cv2.drawFrameAxes(test_img, camera_matrix, dist_coeffs, rvecs[i], tvecs[i], 0.2)
-                    break
+        if ids is not None:
+            # Рисуем маркеры
+            test_img_copy = test_img.copy()
+            cv2.aruco.drawDetectedMarkers(test_img_copy, corners, ids)
             
-            # Уменьшаем для отображения
-            display = cv2.resize(test_img, (960, 540))
-            cv2.imshow('Calibration Result', display)
-            print("\nНажмите любую клавишу для закрытия...")
+            # Для первого маркера рисуем оси
+            if len(rvecs) > 0 and len(tvecs) > 0:
+                cv2.drawFrameAxes(test_img_copy, camera_matrix, dist_coeffs, 
+                                 rvecs[0], tvecs[0], 0.05)
+            
+            cv2.imshow('Calibration Test', cv2.resize(test_img_copy, (960, 540)))
+            print("\nНажмите любую клавишу...")
             cv2.waitKey(0)
             cv2.destroyAllWindows()
     
     return True
 
 if __name__ == "__main__":
-    calibrate_with_existing_images()
+    calibrate_with_markers()
