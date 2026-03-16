@@ -2,7 +2,6 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-
 package_name = 'camera'
 
 setup(
@@ -20,13 +19,14 @@ setup(
     zip_safe=True,
     maintainer='sergey',
     maintainer_email='sergey@todo.todo',
-    description='TODO: Package description',
+    description='Camera package for robotics competition',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'camera_bve_pose = camera.position:main',
             'image_raw_publisher = camera.image_raw_publisher:main',
+            'object_detector = camera.object_detector:main',
         ],
     },
 )
