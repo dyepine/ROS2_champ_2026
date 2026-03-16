@@ -360,7 +360,41 @@ class Strategy(Node):
         stop_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         stop_msg = Twist()
         stop_pub.publish(stop_msg)
+    def load_object_values(self):
+        """Загружает стоимость объектов из конфигурационного файла"""
+        try:
+            package_path = get_package_share_directory('strategy')
+            config_path = os.path.join(package_path, 'config', f'object_values_team{self.team}.yaml')
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                self.object_values = config.get('object_values', {})
+                self.storage_bonus = config.get('storage_bonus', 15)
+                self.zone_multipliers = config.get('zone_multipliers', {})
+                
+            self.get_logger().info(f"Loaded {len(self.object_values)} object values")
+            self.get_logger().info(f"Storage bonus: {self.storage_bonus}")
+            
+        except Exception as e:
+            self.get_logger().error(f"Failed to load object values: {e}")
+            # Значения по умолчанию
+            self.object_values = {}
+            self.storage_bonus = 10
+            self.zone_multipliers = {}
     
+    def calculate_object_score(self, marker_id, zone_name=None):
+        """Вычисляет стоимость объекта с учетом зоны"""
+        base_value = self.object_values.get(marker_id, 0)
+        
+        # Если объект в зоне хранения - добавляем бонус
+        if zone_name and zone_name in ['storage']:
+            return base_value + self.storage_bonus
+        
+        # Если объект в зоне начисления - применяем множитель
+        if zone_name and zone_name in self.zone_multipliers:
+            return int(base_value * self.zone_multipliers[zone_name])
+        
+        return base_value
     def publish_objects_markers(self):
         """Публикует маркеры объектов для визуализации в RViz"""
         marker_array = MarkerArray()
