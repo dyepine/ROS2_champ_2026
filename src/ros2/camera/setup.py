@@ -27,6 +27,7 @@ setup(
             'camera_bve_pose = camera.position:main',
             'image_raw_publisher = camera.image_raw_publisher:main',
             'object_detector = camera.object_detector:main',
+            'start_detector = camera.start_detector:main',
         ],
     },
 )
