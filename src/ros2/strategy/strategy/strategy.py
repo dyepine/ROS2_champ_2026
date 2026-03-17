@@ -72,7 +72,9 @@ class Strategy(Node):
         
         # Подписка на позиции объектов (нужно будет реализовать детекцию объектов)
         self.object_pose_sub = self.create_subscription(PoseStamped, '/object_poses', self.object_pose_callback, 10)
-        
+        self.start_sub = self.create_subscription(
+            UInt8, '/game_started', self.game_start_callback, 10
+        )
         # Bridge for CV
         self.bridge = CvBridge()
         
